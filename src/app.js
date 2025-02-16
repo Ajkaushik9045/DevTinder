@@ -2,19 +2,31 @@ const express = require('express');
 const app = express();
 const connectDb = require("./config/database");
 const User = require("./model/user");
-
+const { validateSignUpData } = require("./utils/validation")
+const bcrypt = require('bcrypt');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
+const { userAuth } = require('./middlewares/auth');
 
 app.use(express.json());
-
-
+app.use(cookieParser());
+//sign Api
 app.post("/signUp", async (req, res) => {
-    const data = req.body;
-    // console.log(data);
-    const user = new User(data);
+
     try {
-        if (data?.skills.length > 10) {
-            throw new Error("Skills can't be more than 10");
-        }
+        validateSignUpData(req);
+        const { firstName, lastName, emailId, password } = req.body;
+        const hashedPassword = await bcrypt.hash(password, 10)
+        console.log(hashedPassword);
+        const user = new User({
+            firstName,
+            lastName,
+            emailId,
+            password: hashedPassword
+        });
+        // if (data?.skills.length > 10) {
+        //     throw new Error("Skills can't be more than 10");
+        // }
         await user.save();
         res.send("User saved Succesfully")
 
@@ -23,75 +35,45 @@ app.post("/signUp", async (req, res) => {
 
     }
 });
-//get API to fetch data of user by there emailId
-app.get("/user", async (req, res) => {
-    const userMail = req.body.emailId;
+
+//Login API
+app.post("/login", async (req, res) => {
     try {
-        //.find function return array of the user found with matching emails
-        const foundUser = await User.find({ emailId: userMail });
+        const { emailId, password } = req.body;
+        const user = await User.findOne({ emailId: emailId });
 
+        if (!user) {
+            throw new Error("Invalid Credentials")
+        }
+        const ValidPassword = await bcrypt.compare(password, user.password);
+        if (ValidPassword) {
+            //Create JWT Token
+            const token = jwt.sign({ _id: user._id }, "devTinder", { expiresIn: "1h" });
+            res.cookie("token", token, {
+                httpOnly: true,
+                secure: false, // Set to true in production
+                sameSite: "Strict"
+            });
 
-        //.findOne function return us a single object not an array with matching emailId
-        // const foundedUser= await User.findOne({emailId:userMail});
-        // if(foundedUser){
-        //     res.send(foundedUser);
-        // }else{
-        //     res.send("user not found");
-        // }
-
-
-        if (foundUser === 0) {
-            res.send("User not found");
-
+            res.send("Login Successfuly")
         } else {
-            res.send(foundUser)
+            throw new Error("Invalid Credentilas");
 
         }
 
     } catch (err) {
-        res.status(500).send("Something Went wrong");
+        res.status(500).send(err.message);
     }
 })
-//get API for fetching all the user stroed in database
-app.get("/feed", async (req, res) => {
-    const users = await User.find({});// {} is a empty object which means "find all the data "
+//Profile API
+app.get('/profile', userAuth, async (req, res) => {
     try {
-        res.send(users);
+        const user = req.user;
+        res.send(user);
     } catch (err) {
-        res.status(500).send("Somethinh Went Worng")
+        res.status(500).send(err.message)
     }
 })
-//.delete API to dleete the user form databse
-app.delete("/user", async (req, res) => {
-    const userId = req.body.userId;
-    try {
-        const deletedUser = await User.findByIdAndDelete(userId);
-        res.send("user deleetd Successfuly")
-    } catch (err) {
-        res.status(500).send("User not deleted Succesfully")
-    }
-})
-//.patch API to update the user data
-app.patch("/user", async (req, res) => {
-    const userId = req.body.userId;
-    const data = req.body;
-    try {
-        const ALLOWED_UPDATE = ["age", "gender", "about", "skills"];
-        const isAlloweUpdate = Object.keys(data).every((k) => ALLOWED_UPDATE.includes(k));
-        if (!isAlloweUpdate) {
-            throw new Error("Update is not Allowed");
-        }
-        if (data?.skills.length > 10) {
-            throw new Error("Skills can't be more than 10");
-        }
-        await User.findByIdAndUpdate(userId, { firstName: "vijay" });
-
-        res.send("user updated Succesfully")
-    } catch (error) {
-        res.status(500).send("User not updated Succesfully")
-    }
-})
-
 
 
 
