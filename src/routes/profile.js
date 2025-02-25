@@ -2,7 +2,7 @@ const express = require('express');
 const profileRouter = express.Router();
 const { userAuth } = require('../middlewares/auth');
 const { validateProfileEdit } = require("../utils/validation");
-const User = require('./models/user');
+const User = require('../model/user');
 const bcrypt = require('bcrypt');
 
 //Profile API
@@ -38,17 +38,24 @@ profileRouter.patch('/profile/edit', userAuth, async (req, res) => {
 profileRouter.patch("/profile/password", userAuth, async (req, res) => {
     try {
         const loggedINUser = req.user;
-        const { oldpassword, newPassword } = req.body;
-        const isPasswordCorrect = await User.validatePassword(oldpassword);
+        const { oldPassword, newPassword } = req.body;
+        if(!oldPassword && !newPassword){
+            throw new Error("Please enter old and new password")
+        }
+        const isPasswordCorrect = await loggedINUser.validatePassword(oldPassword);
         if (!isPasswordCorrect) {
             throw new Error("Old password is incorrect");
         }
         const hashedPassword = await bcrypt.hash(newPassword, 10);
+        
+        if(!hashedPassword){
+            throw new Error("Password hashing failed")
+        }
         loggedINUser.password = hashedPassword;
+
         await loggedINUser.save();
         res.json({
             message: "Password updated Succesfully",
-            data: loggedINUser
         });
     } catch (err) {
         res.status(500).send(err.message);
